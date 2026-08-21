@@ -263,11 +263,15 @@ class FinetuneSolverBase(ABC):
                     promote_param_to_fp32(param)
                 else:
                     param.requires_grad = False
-                    keep_fp32_keywords = ["norm", "lm_head", "embed_tokens"]
-                    if any([_ in key for _ in keep_fp32_keywords]):
-                        promote_param_to_fp32(param)
-                    elif param.is_floating_point():
-                        param.data = param.data.to(self.mixed_precision_dtype)
+                    if getattr(unwrapped_model, "_cast_all_frozen_to_mixed_precision", False):
+                        if param.is_floating_point():
+                            param.data = param.data.to(self.mixed_precision_dtype)
+                    else:
+                        keep_fp32_keywords = ["norm", "lm_head", "embed_tokens"]
+                        if any([_ in key for _ in keep_fp32_keywords]):
+                            promote_param_to_fp32(param)
+                        elif param.is_floating_point():
+                            param.data = param.data.to(self.mixed_precision_dtype)
         else:
             self.logger.warning(
                 f"model class {type(unwrapped_model)} does not have `get_trainable_params` method,"
@@ -377,6 +381,9 @@ class FinetuneSolverBase(ABC):
         else:
             param_init_fn = lambda x: x.to_empty(device=torch.cuda.current_device(), recurse=False)
 
+        if getattr(model, "_fsdp_ignore_frozen_params", False):
+            model = model.to(torch.cuda.current_device())
+
         model = FSDP(
             model,
             auto_wrap_policy=functools.partial(
@@ -406,6 +413,11 @@ class FinetuneSolverBase(ABC):
             sync_module_states=True,
             limit_all_gathers=True,
             use_orig_params=True,
+            ignored_states=(
+                [parameter for parameter in model.parameters() if not parameter.requires_grad]
+                if getattr(model, "_fsdp_ignore_frozen_params", False)
+                else None
+            ),
             param_init_fn=param_init_fn,
         )
         torch.cuda.synchronize()

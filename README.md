@@ -153,6 +153,27 @@ bash pre_tokenizer/run_pre_token.sh
 bash train/train.sh
 ```
 
+### 🧩 DreamBooth-LoRA and DreamBench comparison
+
+This fork adds DreamBooth prior preservation to Lumina-DiMOO's discrete
+masked-token objective, a rank-16 PEFT LoRA path, deterministic DreamBench
+generation, and a shared CLIP/DINO evaluator. The complete guide is in
+[`dreambooth/README.md`](dreambooth/README.md).
+
+The fixed 512×512 protocol uses all 30 Google DreamBench subjects, 25 official
+prompts per subject, and four seeds (3000 images per model):
+
+| Model | CLIP-T ↑ | CLIPScore ↑ | CLIP-I ↑ | DINO-I ↑ |
+| --- | ---: | ---: | ---: | ---: |
+| Lumina-DiMOO DreamBooth-LoRA | 0.289681 | 0.724202 | **0.777162** | **0.626577** |
+| FLUX.1-dev DreamBooth-LoRA | **0.300018** | **0.750045** | 0.683758 | 0.376527 |
+
+FLUX.1-dev has higher text alignment, while Lumina-DiMOO has higher subject
+fidelity (30/30 subjects on DINO-I). See
+[`dreambooth/results/dreambench_summary.json`](dreambooth/results/dreambench_summary.json)
+and [`PROGRESS_2026-08-18_2026-08-21.md`](PROGRESS_2026-08-18_2026-08-21.md)
+for the exact protocol and limitations.
+
 ### 🚗 Text-to-Image Generation Inference
 #### 1. Normal Sampling
 ```
@@ -387,6 +408,5 @@ This work was also supported and implemented by [MindSpeed MM](https://gitee.com
   year={2025}
 }
 ```
-
 
 

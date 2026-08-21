@@ -66,10 +66,10 @@ def generate_image(
     unknown_cnt = vq_mask.sum(dim=1, keepdim=True)
     vq_len = unknown_cnt
 
-    if isinstance(model, LLaDAForMultiModalGeneration):
-        model.caching(use_cache)
-    else:  # DDP
-        model.module.caching(use_cache)
+    # PEFT models are neither the raw Lumina class nor DDP, but expose the
+    # same caching API through attribute forwarding.
+    generation_model = model.module if hasattr(model, "module") else model
+    generation_model.caching(use_cache)
 
     warmup_step = int(timesteps * warmup_ratio)
     refresh_steps = torch.zeros(timesteps, dtype=torch.bool)
@@ -96,10 +96,7 @@ def generate_image(
             keep_n = torch.zeros_like(unknown_cnt)
 
         if use_cache and step and refresh_steps[step]:
-            if isinstance(model, LLaDAForMultiModalGeneration):
-                model.empty_cache()
-            else:  # DDP
-                model.module.empty_cache()
+            generation_model.empty_cache()
 
         # Forward pass (with/without CFG)
         if cfg_scale > 0:

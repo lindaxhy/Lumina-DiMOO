@@ -1,0 +1,8 @@
+# Additional dependencies for DreamBooth-LoRA and DreamBench evaluation.
+# Install the repository's root requirements first.
+accelerate==1.14.0
+diffusers==0.39.0
+openai-clip==1.0.1
+peft==0.19.1
+safetensors==0.8.0
+transformers==4.57.6

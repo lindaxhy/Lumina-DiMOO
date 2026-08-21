@@ -1,2 +1,15 @@
 __pycache__/
 output/
+checkpoints/
+runs/
+xllmx_data_cache/
+.cache/
+wandb/
+logs/
+.env
+.env.*
+!.env.example
+*.safetensors
+*.ckpt
+*.pt
+*.pth

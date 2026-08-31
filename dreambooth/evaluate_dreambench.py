@@ -17,12 +17,11 @@ from pathlib import Path
 import clip
 import numpy as np
 import torch
+from extended_protocol import identity_references
+from generate_dreambench import output_path, read_manifest
 from PIL import Image
 from torchvision.transforms import CenterCrop, Compose, Normalize, Resize, ToTensor
 
-from generate_dreambench import output_path, read_manifest
-
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 DINO_REPOSITORY = "facebookresearch/dino:7c446df5b9f45747937fb0d72314eb9f7b66930a"
 
 
@@ -75,6 +74,11 @@ def main() -> None:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--cache-dir", type=Path, default=Path(".cache/dreambench"))
+    parser.add_argument(
+        "--exclude-reference-index",
+        type=int,
+        help="exclude this sorted reference index from identity metrics (zero-shot held-out report)",
+    )
     args = parser.parse_args()
 
     items = read_manifest(args.manifest)
@@ -104,9 +108,8 @@ def main() -> None:
         indices[item["subject"]].append(index)
     per_subject = {}
     for subject, subject_indices in indices.items():
-        references = sorted(
-            path for path in (args.reference_root / subject).iterdir()
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+        references = identity_references(
+            args.reference_root, subject, args.exclude_reference_index
         )
         ref_clip = image_features(references, clip_model, CLIP_TRANSFORM, device, args.batch_size, True)
         ref_dino = image_features(references, dino_model, DINO_TRANSFORM, device, args.batch_size)
@@ -130,6 +133,7 @@ def main() -> None:
             "identity_reduction": "mean all generated-reference cosines, then macro subject mean",
             "clip_t_definition": "cosine(image,text), then macro subject mean",
             "clip_score_definition": "2.5 * max(cosine(image,text),0), then macro subject mean",
+            "excluded_reference_index": args.exclude_reference_index,
         },
         "overall": overall, "per_subject": per_subject,
     }

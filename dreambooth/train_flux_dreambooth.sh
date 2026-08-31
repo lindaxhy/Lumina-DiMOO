@@ -16,9 +16,22 @@ set -euo pipefail
 : "${MAX_TRAIN_STEPS:=500}"
 : "${NUM_CLASS_IMAGES:=100}"
 : "${LORA_RANK:=16}"
+: "${LORA_ALPHA:=${LORA_RANK}}"
 : "${PRIOR_LOSS_WEIGHT:=1.0}"
+: "${VALIDATION_PROMPT:=}"
+: "${VALIDATION_EPOCHS:=5}"
+: "${NUM_VALIDATION_IMAGES:=1}"
 
 mkdir -p "${CLASS_DIR}" "${OUTPUT_DIR}"
+
+validation_args=()
+if [[ -n "${VALIDATION_PROMPT}" ]]; then
+  validation_args+=(
+    --validation_prompt="${VALIDATION_PROMPT}"
+    --validation_epochs="${VALIDATION_EPOCHS}"
+    --num_validation_images="${NUM_VALIDATION_IMAGES}"
+  )
+fi
 
 PYTHONPATH="${DIFFUSERS_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" \
 "${PYTHON_BIN}" -m accelerate.commands.launch \
@@ -42,4 +55,6 @@ PYTHONPATH="${DIFFUSERS_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" \
   --lr_warmup_steps=0 \
   --max_train_steps="${MAX_TRAIN_STEPS}" \
   --rank="${LORA_RANK}" \
+  --lora_alpha="${LORA_ALPHA}" \
+  "${validation_args[@]}" \
   --seed=0

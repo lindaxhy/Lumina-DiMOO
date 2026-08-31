@@ -166,11 +166,19 @@ prompts per subject, and four seeds (3000 images per model):
 | Model | CLIP-T ↑ | CLIPScore ↑ | CLIP-I ↑ | DINO-I ↑ |
 | --- | ---: | ---: | ---: | ---: |
 | Lumina-DiMOO DreamBooth-LoRA | 0.289681 | 0.724202 | **0.777162** | **0.626577** |
-| FLUX.1-dev DreamBooth-LoRA | **0.300018** | **0.750045** | 0.683758 | 0.376527 |
+| FLUX.1-dev DreamBooth-LoRA (rank 16, alpha 16) | 0.297593 | 0.743982 | 0.705965 | 0.426935 |
+| FLUX.1-dev base-only control | **0.300653** | **0.751632** | 0.680634 | 0.388531 |
 
-FLUX.1-dev has higher text alignment, while Lumina-DiMOO has higher subject
-fidelity (30/30 subjects on DINO-I). See
-[`dreambooth/results/dreambench_summary.json`](dreambooth/results/dreambench_summary.json)
+The corrected FLUX LoRA improves over its matched base-only control by
+`+0.025331` CLIP-I and `+0.038403` DINO-I, winning on 26/30 and 22/30 subjects,
+respectively. It trades off `-0.003060` CLIP-T. Lumina retains higher identity
+scores than corrected FLUX (`+0.071197` CLIP-I and `+0.199642` DINO-I), while
+corrected FLUX has `+0.007912` CLIP-T.
+
+The previous FLUX run used rank 16 with Diffusers' default alpha 4 and remains
+available only as an invalid audit artifact. See the corrected
+[`dreambench_summary_alpha16.json`](dreambooth/results/dreambench_summary_alpha16.json),
+the historical [`dreambench_summary.json`](dreambooth/results/dreambench_summary.json),
 and [`PROGRESS_2026-08-18_2026-08-21.md`](PROGRESS_2026-08-18_2026-08-21.md)
 for the exact protocol and limitations.
 
@@ -408,5 +416,3 @@ This work was also supported and implemented by [MindSpeed MM](https://gitee.com
   year={2025}
 }
 ```
-
-

@@ -77,9 +77,21 @@ DIFFUSERS_ROOT=../external/diffusers \
 INSTANCE_DIR=../external/google-dreambooth/dataset/dog \
 CLASS_DIR=runs/class_images/flux_dog \
 INSTANCE_PROMPT='a sks dog' CLASS_PROMPT='a dog' \
+LORA_RANK=16 LORA_ALPHA=16 \
 OUTPUT_DIR=runs/flux_dreambooth/dog \
 bash dreambooth/train_flux_dreambooth.sh
 ```
+
+`LORA_ALPHA` defaults to `LORA_RANK`, so the effective PEFT scale is one on
+both sides of the comparison. Do not reuse adapters produced before this was
+made explicit: the historical FLUX run used rank 16 with Diffusers' default
+alpha 4, giving an unintended scale of 0.25. `run_subject_shard.py` records a
+`dreambench_training_config.json` next to each new adapter and refuses to skip
+an existing adapter whose metadata does not match the requested protocol.
+After the trainer exits, the shard runner starts a clean inference process and
+renders one deterministic identity validation image next to the adapter. This
+avoids the official trainer's final-validation memory spike while still
+verifying that the saved adapter can be loaded and triggered.
 
 FLUX.1-dev is gated. The Hugging Face account used by the runner must accept
 its license and provide a token before the baseline can run.
@@ -112,6 +124,15 @@ python dreambooth/generate_dreambench.py --model-type flux \
   --output-dir runs/dreambench/flux
 ```
 
+Generate the required causal control with the same manifest and seeds:
+
+```bash
+python dreambooth/generate_dreambench.py --model-type flux \
+  --manifest runs/dreambench/manifest.jsonl --base-only \
+  --base-model checkpoints/FLUX.1-dev \
+  --output-dir runs/dreambench/flux_base
+```
+
 Evaluate each output with the same process:
 
 ```bash
@@ -120,6 +141,11 @@ python dreambooth/evaluate_dreambench.py \
   --generated-root runs/dreambench/lumina \
   --reference-root ../external/google-dreambooth/dataset \
   --output runs/dreambench/lumina_metrics.json
+
+python dreambooth/compare_dreambench_metrics.py \
+  --base runs/dreambench/flux_base_metrics.json \
+  --lora runs/dreambench/flux_metrics.json \
+  --output runs/dreambench/flux_lora_delta.json
 ```
 
 The evaluator reports raw CLIP-T cosine, the separately named scaled
@@ -127,10 +153,38 @@ CLIPScore (`2.5 * max(CLIP-T, 0)`), CLIP-I, and DINO-I. Its preprocessing and
 all-pairs identity reduction match the public Adobe Custom Diffusion evaluator,
 and the JSON records the exact metric definitions.
 
-## Reproduced results
+## Corrected FLUX alpha-16 results
 
-The formal run used 30 subjects, 25 official prompts, four seeds, 512×512
-generation, rank-16 LoRA, learning rate `1e-4`, and prior loss weight `1.0`.
+All 30 FLUX adapters were retrained with rank 16, alpha 16, and 500 updates.
+Both the LoRA and base-only control rendered the same 3000-entry manifest at
+512×512; both output sets passed exact path, count, decode, and resolution
+validation with zero missing, extra, or invalid images.
+
+| Model | CLIP-T ↑ | CLIPScore ↑ | CLIP-I ↑ | DINO-I ↑ |
+| --- | ---: | ---: | ---: | ---: |
+| Lumina-DiMOO DreamBooth-LoRA | 0.289681 | 0.724202 | **0.777162** | **0.626577** |
+| FLUX.1-dev DreamBooth-LoRA (alpha 16) | 0.297593 | 0.743982 | 0.705965 | 0.426935 |
+| FLUX.1-dev base-only | **0.300653** | **0.751632** | 0.680634 | 0.388531 |
+
+Corrected FLUX LoRA minus base-only is `-0.003060` CLIP-T, `-0.007650`
+CLIPScore, `+0.025331` CLIP-I, and `+0.038403` DINO-I. Identity improves for
+26/30 subjects by CLIP-I and 22/30 by DINO-I, so the adapter learns subject
+identity rather than merely reproducing base-model behavior. Lumina remains
+higher than corrected FLUX by `+0.071197` CLIP-I and `+0.199642` DINO-I;
+corrected FLUX remains higher by `+0.007912` CLIP-T.
+
+Machine-readable results are in
+[`results/dreambench_summary_alpha16.json`](results/dreambench_summary_alpha16.json),
+with the full base delta in
+`runs/dreambench/flux_alpha16_lora_delta.json`.
+
+## Historical results invalidated by the FLUX alpha mismatch
+
+The table below is retained only as an audit record and must not be cited as a
+model comparison. The historical run used 30 subjects, 25 official prompts,
+four seeds, 512×512 generation, nominal rank-16 LoRA, learning rate `1e-4`, and
+prior loss weight `1.0`, but FLUX had `alpha/rank=4/16` while Lumina had
+`alpha/rank=16/16`.
 Lumina used 400–600 updates according to its 4–6 instance images; FLUX used 500
 updates. FLUX's prior-preservation batch processes one instance and one class
 image per update, so equal update counts do not imply equal compute.
@@ -141,5 +195,6 @@ image per update, so equal update counts do not imply equal compute.
 | FLUX.1-dev DreamBooth-LoRA | **0.300018** | **0.750045** | 0.683758 | 0.376527 |
 
 Lumina wins 27/30 subjects on CLIP-I and 30/30 on DINO-I. FLUX wins 21/30
-subjects on CLIP-T. The machine-readable aggregate, deltas, protocol, and win
-counts are in [`results/dreambench_summary.json`](results/dreambench_summary.json).
+subjects on CLIP-T in this invalid run. The corrected result is reported above;
+the old machine-readable aggregate remains in
+[`results/dreambench_summary.json`](results/dreambench_summary.json) for audit.

@@ -7,35 +7,23 @@ set -euo pipefail
 : "${INSTANCE_PROMPT:?set INSTANCE_PROMPT, e.g. 'a sks dog'}"
 : "${CLASS_PROMPT:?set CLASS_PROMPT, e.g. 'a dog'}"
 : "${OUTPUT_DIR:?set OUTPUT_DIR}"
-: "${MODEL:=black-forest-labs/FLUX.1-dev}"
+: "${MODEL:=Tongyi-MAI/Z-Image}"
 : "${PYTHON_BIN:=python}"
 : "${RESOLUTION:=512}"
 : "${BATCH_SIZE:=1}"
 : "${ACCUM_ITER:=4}"
 : "${LR:=1e-4}"
 : "${MAX_TRAIN_STEPS:=500}"
-: "${NUM_CLASS_IMAGES:=100}"
+: "${NUM_CLASS_IMAGES:=20}"
 : "${LORA_RANK:=16}"
 : "${LORA_ALPHA:=${LORA_RANK}}"
 : "${PRIOR_LOSS_WEIGHT:=1.0}"
-: "${VALIDATION_PROMPT:=}"
-: "${VALIDATION_EPOCHS:=5}"
-: "${NUM_VALIDATION_IMAGES:=1}"
 
 mkdir -p "${CLASS_DIR}" "${OUTPUT_DIR}"
 
-validation_args=()
-if [[ -n "${VALIDATION_PROMPT}" ]]; then
-  validation_args+=(
-    --validation_prompt="${VALIDATION_PROMPT}"
-    --validation_epochs="${VALIDATION_EPOCHS}"
-    --num_validation_images="${NUM_VALIDATION_IMAGES}"
-  )
-fi
-
 PYTHONPATH="${DIFFUSERS_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" \
 "${PYTHON_BIN}" -m accelerate.commands.launch \
-  "${DIFFUSERS_ROOT}/examples/dreambooth/train_dreambooth_lora_flux.py" \
+  "${DIFFUSERS_ROOT}/examples/dreambooth/train_dreambooth_lora_z_image.py" \
   --pretrained_model_name_or_path="${MODEL}" \
   --instance_data_dir="${INSTANCE_DIR}" \
   --class_data_dir="${CLASS_DIR}" \
@@ -45,10 +33,12 @@ PYTHONPATH="${DIFFUSERS_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" \
   --with_prior_preservation \
   --prior_loss_weight="${PRIOR_LOSS_WEIGHT}" \
   --num_class_images="${NUM_CLASS_IMAGES}" \
+  --prior_generation_precision=bf16 \
   --resolution="${RESOLUTION}" \
   --train_batch_size="${BATCH_SIZE}" \
   --gradient_accumulation_steps="${ACCUM_ITER}" \
   --gradient_checkpointing \
+  --cache_latents \
   --mixed_precision=bf16 \
   --learning_rate="${LR}" \
   --lr_scheduler=constant \
@@ -56,5 +46,5 @@ PYTHONPATH="${DIFFUSERS_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" \
   --max_train_steps="${MAX_TRAIN_STEPS}" \
   --rank="${LORA_RANK}" \
   --lora_alpha="${LORA_ALPHA}" \
-  "${validation_args[@]}" \
+  --guidance_scale=5.0 \
   --seed=0

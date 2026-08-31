@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--token", default="sks")
     parser.add_argument("--seeds", default="0,1,2,3")
     parser.add_argument("--subjects", default="", help="comma-separated subset; default is all 30")
+    parser.add_argument("--prompt-ids", default="", help="comma-separated prompt indices; default is all 25")
     args = parser.parse_args()
     mapping = load_subjects(args.dataset_root / "prompts_and_classes.txt")
     selected = [x for x in args.subjects.split(",") if x] or list(mapping)
@@ -24,12 +25,18 @@ def main() -> None:
     if unknown:
         raise ValueError(f"unknown subjects: {unknown}")
     seeds = [int(value) for value in args.seeds.split(",")]
+    prompt_ids = [int(value) for value in args.prompt_ids.split(",") if value] or list(range(25))
+    invalid_prompt_ids = [value for value in prompt_ids if not 0 <= value < 25]
+    if invalid_prompt_ids:
+        raise ValueError(f"prompt ids must be between 0 and 24: {invalid_prompt_ids}")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with args.output.open("w") as handle:
         for subject in selected:
             class_name = mapping[subject]
-            for prompt_id, prompt in enumerate(prompts_for(class_name, args.token)):
+            prompts = prompts_for(class_name, args.token)
+            for prompt_id in prompt_ids:
+                prompt = prompts[prompt_id]
                 for seed in seeds:
                     item = {
                         "subject": subject,

@@ -180,6 +180,7 @@ def generate_z_image(args: argparse.Namespace, items: list[dict]) -> None:
             generator = torch.Generator(device=device).manual_seed(item["seed"])
             image = pipe(
                 prompt=item["prompt"],
+                negative_prompt=args.negative_prompt,
                 height=args.resolution,
                 width=args.resolution,
                 num_inference_steps=args.steps,
@@ -191,14 +192,101 @@ def generate_z_image(args: argparse.Namespace, items: list[dict]) -> None:
             pipe.unload_lora_weights()
 
 
+def generate_sdxl_img2img_zero_shot(args: argparse.Namespace, items: list[dict]) -> None:
+    import torch
+    from diffusers import StableDiffusionXLImg2ImgPipeline
+
+    device = torch.device(args.device)
+    pipe = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+        args.base_model, torch_dtype=torch.bfloat16, use_safetensors=True
+    ).to(device)
+    metadata = MetadataWriter(args.output_dir)
+    for subject, subject_items in grouped(items):
+        reference_path = select_reference(args.reference_root, subject, args.reference_index)
+        reference = ensure_square(Image.open(reference_path).convert("RGB"), args.resolution)
+        for item in subject_items:
+            destination = output_path(args.output_dir, item)
+            if destination.exists() and not args.overwrite:
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            generator = torch.Generator(device=device).manual_seed(item["seed"])
+            image = pipe(
+                prompt=item["prompt"],
+                image=reference,
+                strength=args.strength,
+                num_inference_steps=args.steps,
+                guidance_scale=args.guidance_scale,
+                negative_prompt=args.negative_prompt,
+                generator=generator,
+            ).images[0]
+            ensure_square(image, args.resolution).save(destination)
+            metadata.write(
+                {
+                    **item,
+                    "model_type": "sdxl_img2img_zero_shot",
+                    "reference_path": str(reference_path),
+                    "strength": args.strength,
+                    "output_path": str(destination),
+                }
+            )
+
+
+def generate_z_image_img2img_zero_shot(args: argparse.Namespace, items: list[dict]) -> None:
+    import torch
+    from diffusers import ZImageImg2ImgPipeline
+
+    device = torch.device(args.device)
+    pipe = ZImageImg2ImgPipeline.from_pretrained(args.base_model, torch_dtype=torch.bfloat16).to(device)
+    metadata = MetadataWriter(args.output_dir)
+    for subject, subject_items in grouped(items):
+        reference_path = select_reference(args.reference_root, subject, args.reference_index)
+        reference = ensure_square(Image.open(reference_path).convert("RGB"), args.resolution)
+        for item in subject_items:
+            destination = output_path(args.output_dir, item)
+            if destination.exists() and not args.overwrite:
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            generator = torch.Generator(device=device).manual_seed(item["seed"])
+            image = pipe(
+                prompt=item["prompt"],
+                image=reference,
+                strength=args.strength,
+                height=args.resolution,
+                width=args.resolution,
+                num_inference_steps=args.steps,
+                guidance_scale=args.guidance_scale,
+                negative_prompt=args.negative_prompt,
+                generator=generator,
+            ).images[0]
+            ensure_square(image, args.resolution).save(destination)
+            metadata.write(
+                {
+                    **item,
+                    "model_type": "z_image_img2img_zero_shot",
+                    "reference_path": str(reference_path),
+                    "strength": args.strength,
+                    "output_path": str(destination),
+                }
+            )
+
+
 def generate_qwen_zero_shot(args: argparse.Namespace, items: list[dict]) -> None:
     import torch
     from diffusers import QwenImageEditPlusPipeline
 
-    device = torch.device(args.device)
-    pipe = QwenImageEditPlusPipeline.from_pretrained(
-        args.base_model, torch_dtype=torch.bfloat16
-    ).to(device)
+    load_kwargs = {"torch_dtype": torch.bfloat16}
+    if args.device_map:
+        load_kwargs["device_map"] = args.device_map
+        if args.max_memory:
+            raw_memory = json.loads(args.max_memory)
+            load_kwargs["max_memory"] = {
+                int(key) if key.isdigit() else key: value for key, value in raw_memory.items()
+            }
+        pipe = QwenImageEditPlusPipeline.from_pretrained(args.base_model, **load_kwargs)
+        device = pipe._execution_device
+    else:
+        device = torch.device(args.device)
+        pipe = QwenImageEditPlusPipeline.from_pretrained(args.base_model, **load_kwargs).to(device)
     metadata = MetadataWriter(args.output_dir)
     for subject, subject_items in grouped(items):
         reference_path = select_reference(args.reference_root, subject, args.reference_index)
@@ -276,7 +364,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model-type",
-        choices=("lumina", "flux", "qwen_zero_shot", "bagel_zero_shot", "sdxl", "z_image"),
+        choices=(
+            "lumina",
+            "flux",
+            "qwen_zero_shot",
+            "bagel_zero_shot",
+            "sdxl",
+            "z_image",
+            "sdxl_img2img_zero_shot",
+            "z_image_img2img_zero_shot",
+        ),
         required=True,
     )
     parser.add_argument("--manifest", type=Path, required=True)
@@ -293,16 +390,25 @@ def main() -> None:
     parser.add_argument("--bagel-image-scale", type=float, default=2.0)
     parser.add_argument("--bagel-device-memory", default="90GiB")
     parser.add_argument("--resolution", type=int, default=512)
+    parser.add_argument("--strength", type=float, default=0.6, help="img2img reference strength")
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--guidance-scale", type=float, default=None)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--device-map", help="Accelerate device map, e.g. balanced (Qwen zero-shot)")
+    parser.add_argument("--max-memory", help="JSON max-memory map used with --device-map")
     parser.add_argument("--use-cache", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     adapter_models = {"lumina", "flux", "sdxl", "z_image"}
     if args.model_type in adapter_models and not args.base_only and not args.checkpoint_template:
         parser.error("--checkpoint-template is required unless --base-only is set")
-    if args.model_type in {"qwen_zero_shot", "bagel_zero_shot"} and args.reference_root is None:
+    reference_models = {
+        "qwen_zero_shot",
+        "bagel_zero_shot",
+        "sdxl_img2img_zero_shot",
+        "z_image_img2img_zero_shot",
+    }
+    if args.model_type in reference_models and args.reference_root is None:
         parser.error("--reference-root is required for zero-shot reference-conditioned models")
     if args.reference_index < 0:
         parser.error("--reference-index must be non-negative")
@@ -328,6 +434,14 @@ def main() -> None:
         args.base_model = args.base_model or "stabilityai/stable-diffusion-xl-base-1.0"
         args.steps = args.steps or 50
         args.guidance_scale = args.guidance_scale or 5.0
+    elif args.model_type == "z_image":
+        args.base_model = args.base_model or "Tongyi-MAI/Z-Image"
+        args.steps = args.steps or 50
+        args.guidance_scale = args.guidance_scale or 5.0
+    elif args.model_type == "sdxl_img2img_zero_shot":
+        args.base_model = args.base_model or "stabilityai/stable-diffusion-xl-base-1.0"
+        args.steps = args.steps or 50
+        args.guidance_scale = args.guidance_scale or 5.0
     else:
         args.base_model = args.base_model or "Tongyi-MAI/Z-Image"
         args.steps = args.steps or 50
@@ -343,6 +457,8 @@ def main() -> None:
         "bagel_zero_shot": generate_bagel_zero_shot,
         "sdxl": generate_sdxl,
         "z_image": generate_z_image,
+        "sdxl_img2img_zero_shot": generate_sdxl_img2img_zero_shot,
+        "z_image_img2img_zero_shot": generate_z_image_img2img_zero_shot,
     }
     generators[args.model_type](args, items)
 

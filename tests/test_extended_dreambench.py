@@ -3,20 +3,21 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dreambooth"))
 
-from extended_protocol import (
+from extended_protocol import (  # noqa: E402
     ensure_square,
     identity_references,
     prompt_without_identifier,
     select_reference,
     zero_shot_conditioning_prompt,
 )
-from run_extended_subject_shard import training_config
-from validate_dreambench_outputs import validate
+from run_extended_subject_shard import select_subjects, training_config  # noqa: E402
+from validate_dreambench_outputs import validate  # noqa: E402
 
 
 def test_zero_shot_prompt_preserves_benchmark_text_and_removes_identifier():
@@ -62,6 +63,17 @@ def test_extended_training_metadata_uses_unit_lora_scale():
     assert config["lora_alpha"] == config["lora_rank"] == 16
     assert config["lora_scale"] == 1.0
     assert config["instance_prompt"] == "a sks dog"
+
+
+def test_explicit_subject_selection_happens_before_sharding():
+    subjects = {"dog": "dog", "cat2": "cat", "backpack": "backpack"}
+    assert select_subjects(subjects, "dog, backpack", 2, 0) == [("dog", "dog")]
+    assert select_subjects(subjects, "dog, backpack", 2, 1) == [("backpack", "backpack")]
+
+
+def test_explicit_subject_selection_rejects_unknown_subjects():
+    with pytest.raises(ValueError, match="unknown subjects"):
+        select_subjects({"dog": "dog"}, "cat", 1, 0)
 
 
 def test_output_validator(tmp_path):

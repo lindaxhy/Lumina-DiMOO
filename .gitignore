@@ -6,6 +6,7 @@ xllmx_data_cache/
 .cache/
 wandb/
 logs/
+.lark-slides/
 .env
 .env.*
 !.env.example

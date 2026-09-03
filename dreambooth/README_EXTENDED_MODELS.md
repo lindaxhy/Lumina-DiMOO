@@ -56,6 +56,10 @@ python dreambooth/generate_dreambench.py \
   --output-dir runs/dreambench_extended/qwen_pilot
 ```
 
+For checkpoints that do not fit on one GPU, add an Accelerate device map and a
+JSON memory budget, for example `--device-map balanced --max-memory
+'{"0":"78GiB","1":"78GiB","cpu":"120GiB"}'`.
+
 BAGEL uses its official repository and a local checkpoint:
 
 ```bash
@@ -108,7 +112,40 @@ Generate SDXL or Z-Image outputs by passing `--model-type sdxl` or
 `--model-type z_image` and an adapter template such as
 `runs/dreambench_extended/sdxl_adapters/{subject}`.
 
-## 4. Validate and evaluate
+To run only a subset during training, pass a comma-separated list such as
+`--subjects dog,cat2`. Subject filtering happens before `--num-shards` and
+`--shard-index` are applied.
+
+## 4. Reference-conditioned base img2img baselines
+
+SDXL and Z-Image can also be evaluated without subject adapters. Both variants
+use the same fixed reference selection and metadata contract as the other
+zero-shot conditions:
+
+```bash
+PYTHONPATH=../external/diffusers/src \
+python dreambooth/generate_dreambench.py \
+  --model-type sdxl_img2img_zero_shot \
+  --base-model ../models/SDXL-1.0 \
+  --manifest runs/dreambench_extended/pilot.jsonl \
+  --reference-root ../external/google-dreambooth/dataset \
+  --reference-index 0 --strength 0.6 --resolution 512 \
+  --output-dir runs/dreambench_extended/sdxl_img2img_pilot
+
+PYTHONPATH=../external/diffusers/src \
+python dreambooth/generate_dreambench.py \
+  --model-type z_image_img2img_zero_shot \
+  --base-model ../models/Z-Image \
+  --manifest runs/dreambench_extended/pilot.jsonl \
+  --reference-root ../external/google-dreambooth/dataset \
+  --reference-index 0 --strength 0.6 --resolution 512 \
+  --output-dir runs/dreambench_extended/z_image_img2img_pilot
+```
+
+Use `render_extended_prompt10_comparison.py` to render the fixed prompt 10,
+seed 0 comparison grid after generation.
+
+## 5. Validate and evaluate
 
 Validate coverage, dimensions, RGB mode, and decodability before feature
 extraction:

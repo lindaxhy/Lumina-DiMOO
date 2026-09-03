@@ -45,6 +45,18 @@ def training_config(args: argparse.Namespace, subject: str, class_name: str) -> 
     }
 
 
+def select_subjects(
+    subject_map: dict[str, str], requested: str, num_shards: int, shard_index: int
+) -> list[tuple[str, str]]:
+    selected = [
+        value.strip() for value in requested.split(",") if value.strip()
+    ] or list(subject_map)
+    unknown = sorted(set(selected) - set(subject_map))
+    if unknown:
+        raise ValueError(f"unknown subjects: {unknown}")
+    return [(subject, subject_map[subject]) for subject in selected][shard_index::num_shards]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-type", choices=("sdxl", "z_image"), required=True)
@@ -57,6 +69,11 @@ def main() -> None:
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--num-shards", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument(
+        "--subjects",
+        default="",
+        help="comma-separated subject subset; default is every DreamBench subject",
+    )
     parser.add_argument("--steps", type=int, default=500)
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
@@ -75,7 +92,11 @@ def main() -> None:
     if args.model_type == "sdxl" and args.lora_alpha not in (None, args.lora_rank):
         parser.error("the official SDXL trainer fixes LoRA alpha equal to rank")
 
-    subjects = list(load_subjects(args.classes_file).items())[args.shard_index :: args.num_shards]
+    subject_map = load_subjects(args.classes_file)
+    try:
+        subjects = select_subjects(subject_map, args.subjects, args.num_shards, args.shard_index)
+    except ValueError as error:
+        parser.error(str(error))
     for subject, class_name in subjects:
         output_dir = args.output_root / subject
         adapter_path = output_dir / "pytorch_lora_weights.safetensors"
